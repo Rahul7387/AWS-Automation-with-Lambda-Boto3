@@ -1,0 +1,27 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3CleanupAccess",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::my-cleanup-demo-bucket-rahul"
+    },
+    {
+      "Sid": "S3DeleteObjects",
+      "Effect": "Allow",
+      "Action": ["s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::my-cleanup-demo-bucket-rahul/*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}

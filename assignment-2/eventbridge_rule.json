@@ -1,0 +1,5 @@
+{
+  "ScheduleExpression": "cron(0 2 ? * SUN *)",
+  "State": "ENABLED",
+  "Description": "Triggers EBS snapshot creation and cleanup Lambda every Sunday at 2AM UTC"
+}
