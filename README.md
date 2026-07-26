@@ -573,6 +573,8 @@ Amazon EventBridge → Schedules → Create schedule
 - Click Next → skip managed policies → Next
 - Role name: `lambda-ec2-restore-role`
 
+![Create Role](screenshots/assignment-5/01-create-role-1.png)
+
 **Step 1.2 — Add inline policy**
 
 Click into `lambda-ec2-restore-role` → Permissions tab → Add permissions → Create inline policy → JSON tab:
@@ -607,6 +609,8 @@ Click into `lambda-ec2-restore-role` → Permissions tab → Add permissions →
 }
 ```
 
+![Inline Policy](screenshots/assignment-5/02-create-role-2.png)
+
 ### Phase 2: Create the Lambda Function
 
 - Go to Lambda → Create function
@@ -614,6 +618,9 @@ Click into `lambda-ec2-restore-role` → Permissions tab → Add permissions →
 - Function name: `ec2-snapshot-restore`
 - Runtime: Python 3.14
 - Execution role: Use an existing role → select `lambda-ec2-restore-role`
+
+![Create Lambda](screenshots/assignment-5/03-create-lambda-1.png)
+![Create Lambda](screenshots/assignment-5/04-create-lambda-2.png)
 
 **Step 2.2 — Paste the code**
 
@@ -636,11 +643,15 @@ Configuration → Environment variables → Edit:
 | `SUBNET_ID` | *(leave empty)* | Optional subnet for the instance |
 | `ARCHITECTURE` | `x86_64` | AMI architecture |
 
+![Environment Variables](screenshots/assignment-5/05-env-variables.png)
+
 **Step 2.4 — Increase timeout**
 
-Configuration → General configuration → Edit → Timeout: **10 min 0 sec** (AMI registration + waiter needs time)
+Configuration → General configuration → Edit → Timeout: **5 min 0 sec** (AMI registration needs time)
 
-### Phase 3: Test the Function
+![Timeout Config](screenshots/assignment-5/06-timeout-config.png)
+
+### Phase 3: Test the Function & Troubleshooting
 
 **Step 3.1 — Create test event and run**
 
@@ -648,26 +659,36 @@ Go to Test tab → Event name: `TestRestore` → Event JSON: `{}` → Click **Te
 
 #### Debugging: No Snapshots Found
 
-The function ran correctly but returned an error — no completed snapshots found for the volume. This means the snapshot from Assignment 2 was deleted during cleanup.
+The function ran correctly but returned an error — no completed snapshots found for the volume. The original volume from Assignment 2 was deleted during cleanup.
 
-**Fix:** Create a new snapshot first:
+![Error - No Snapshots](screenshots/assignment-5/07-error-no-snapshots.png)
+
+**Fix:** Create a new volume and snapshot:
 - Go to EC2 → Elastic Block Store → Snapshots → **Create snapshot**
-- Volume ID: `vol-0b28c036a11912ffc`
-- Wait for the snapshot status to change to **completed**
+- New Volume ID: `vol-0fe7735758dd44059`
+- Snapshot ID: `snap-09d79f3b09ccfab65`
 
-**Retest** — Run the test again. The function should now:
-1. Find the snapshot
-2. Register an AMI
-3. Launch a new instance
-4. Return a summary with the new instance ID
+![New Snapshot Created](screenshots/assignment-5/08-new-snapshot-1.png)
+![New Snapshot Created](screenshots/assignment-5/09-new-snapshot-2.png)
+
+#### Successful Retest
+
+After creating the snapshot, retest succeeded:
+
+![Successful Retest](screenshots/assignment-5/10-successful-retest.png)
 
 **Step 3.4 — Check CloudWatch Logs**
 
 Go to CloudWatch → Log groups → `/aws/lambda/ec2-snapshot-restore` → Click the latest log stream
 
-You should see the full flow: snapshot discovery → AMI registration → AMI available → instance launched.
+![CloudWatch Logs](screenshots/assignment-5/11-cloudwatch-logs-1.png)
+![CloudWatch Logs](screenshots/assignment-5/12-cloudwatch-logs-2.png)
 
 > **Important:** Remember to **TERMINATE** the restored instance after testing to avoid charges! Go to EC2 → Instances → select the restored instance → Instance state → Terminate instance.
+
+### Discussion
+
+> For simple disaster recovery, **AWS Backup** or manually maintained AMIs can handle instance restoration natively. Lambda-based restore automation is the better choice when you need to implement custom recovery logic (e.g., selecting snapshots based on tags, application version, or environment), when restoration must be triggered programmatically as part of a larger incident-response workflow, when you need cross-region or cross-account restoration with custom networking and security group configurations, or when the recovery process requires coordination with other services like updating DNS records in Route 53, re-registering with a load balancer, or notifying teams via Slack/SNS upon successful restoration.
 
 ---
 
@@ -687,6 +708,9 @@ You should see the full flow: snapshot discovery → AMI registration → AMI av
 - Click Create topic
 - Copy the Topic ARN: `arn:aws:sns:us-east-1:368763426154:S3PublicAlerts`
 
+![SNS Create Topic](screenshots/assignment-6/01-sns-create-topic.png)
+![SNS Topic Created](screenshots/assignment-6/02-sns-topic-created.png)
+
 **Step 1.2 — Subscribe your email**
 
 - On the topic page → Create subscription
@@ -694,6 +718,9 @@ You should see the full flow: snapshot discovery → AMI registration → AMI av
 - Endpoint: your email address
 - Click Create subscription
 - Confirm the subscription from your email inbox
+
+![Email Subscription](screenshots/assignment-6/03-email-subscription.png)
+![Subscription Confirmed](screenshots/assignment-6/04-subscription-confirmed.png)
 
 ### Phase 2: Create the IAM Role
 
@@ -703,6 +730,8 @@ You should see the full flow: snapshot discovery → AMI registration → AMI av
 - Trusted entity: AWS service → Lambda
 - Click Next → skip managed policies → Next
 - Role name: `lambda-s3-audit-role`
+
+![Create Role](screenshots/assignment-6/05-create-role-1.png)
 
 **Step 2.2 — Add inline policy**
 
@@ -745,6 +774,8 @@ Permissions tab → Add permissions → Create inline policy → JSON tab:
 }
 ```
 
+![Inline Policy](screenshots/assignment-6/06-create-role-2.png)
+
 ### Phase 3: Create the Lambda Function
 
 **Step 3.1 — Create function**
@@ -754,6 +785,8 @@ Permissions tab → Add permissions → Create inline policy → JSON tab:
 - Function name: `s3-public-access-audit`
 - Runtime: Python 3.12
 - Execution role: Use an existing role → select `lambda-s3-audit-role`
+
+![Create Lambda](screenshots/assignment-6/07-create-lambda.png)
 
 **Step 3.2 — Paste the code**
 
@@ -772,9 +805,13 @@ Configuration → Environment variables → Edit:
 |-----|-------|
 | `SNS_TOPIC_ARN` | `arn:aws:sns:us-east-1:368763426154:S3PublicAlerts` |
 
+![Environment Variables](screenshots/assignment-6/08-env-variables.png)
+
 **Step 3.4 — Set timeout**
 
-Configuration → General configuration → Edit → Timeout: **1 min 0 sec**
+Configuration → General configuration → Edit → Timeout: **2 min 0 sec**
+
+![Timeout Config](screenshots/assignment-6/09-timeout-config.png)
 
 ### Phase 4: Create a Deliberately Public Test Bucket
 
@@ -787,9 +824,13 @@ Configuration → General configuration → Edit → Timeout: **1 min 0 sec**
 - **Check** the acknowledgement box that appears
 - Click Create bucket
 
+![Public Test Bucket](screenshots/assignment-6/10-public-test-bucket-1.png)
+
 **Step 4.2 — Add a public bucket policy**
 
 Go to the bucket → Permissions tab → Bucket policy → Edit → paste a public-read policy to make the bucket detectable by the audit.
+
+![Public Bucket Policy](screenshots/assignment-6/11-public-test-bucket-2.png)
 
 ### Phase 5: Test the Function
 
@@ -803,6 +844,9 @@ The function should:
 - Send an SNS alert email with the findings
 - Return a summary showing 1 public bucket found
 
+![Test Results](screenshots/assignment-6/12-test-results-1.png)
+![Test Results](screenshots/assignment-6/13-test-results-2.png)
+
 ### Phase 6: RE-SECURE the Test Bucket
 
 **This step is critical — do not leave a public bucket in your account!**
@@ -810,6 +854,8 @@ The function should:
 - Go to S3 → `test-public-audit-rahul` → Permissions → Bucket policy → **Delete**
 - Enable Block Public Access: Permissions → Block public access → **Edit** → check all boxes → Save
 - Alternatively, just delete the test bucket entirely: empty it first, then delete
+
+![Re-Secured Bucket](screenshots/assignment-6/14-re-secured-bucket.png)
 
 ### Phase 7: Create the EventBridge Daily Schedule
 
@@ -822,6 +868,25 @@ The function should:
 - Schedule type: Rate-based schedule
 - Rate expression: `1 day`
 - Target: AWS Lambda → `s3-public-access-audit`
+
+![EventBridge Schedule](screenshots/assignment-6/15-eventbridge-schedule.png)
+
+### Discussion
+
+> AWS provides native tools like **S3 Access Analyzer** and **IAM Access Analyzer** that can detect public S3 buckets and flag overly permissive policies. For simple alerting, **AWS Config** rules (e.g., `s3-bucket-public-read-prohibited`) can monitor and auto-remediate public access. Lambda-based auditing is the better choice when you need custom audit logic across multiple checks (Block Public Access, bucket policy, and ACLs combined), when you want consolidated alerts with detailed per-bucket issue breakdowns in a single notification, when alerts need to be delivered to Slack, Teams, or PagerDuty rather than just email, or when you need to integrate the audit with a broader compliance dashboard that correlates S3 exposure with other security findings across your AWS environment.
+
+---
+
+## Summary of All Assignments
+
+| # | Assignment | Lambda Function | IAM Role | Trigger |
+|---|-----------|----------------|----------|---------|
+| 1 | S3 Bucket Cleanup | `s3-bucket-cleanup` | `lambda-s3-cleanup-role` | Manual |
+| 2 | EBS Snapshot Mgmt | `ebs-snapshot-manager` | `lambda-ebs-backup-role` | Weekly cron |
+| 3 | EC2 Auto-Tagging | `ec2-auto-tagger` | `lambda-ec2-autotag-role` | Event pattern |
+| 4 | Cost Alert (SNS) | `daily-cost-alert` | `lambda-cost-alert-role` | Daily rate |
+| 5 | EC2 Restore | `ec2-snapshot-restore` | `lambda-ec2-restore-role` | Manual |
+| 6 | S3 Public Audit | `s3-public-access-audit` | `lambda-s3-audit-role` | Daily rate |
 
 ---
 
@@ -852,3 +917,18 @@ All Lambda functions share the same trust policy ([`lambda_trust_policy.json`](l
 4. **Configure environment variables** as specified
 5. **Set timeout** to at least 1 minute
 6. **Test** manually, then set up EventBridge triggers as needed
+
+---
+
+## Cleanup Checklist
+
+All resources cleaned up after testing:
+- EC2 instances terminated
+- EBS volumes/snapshots deleted
+- AMIs deregistered
+- S3 buckets emptied and deleted
+- Lambda functions deleted
+- IAM roles removed
+- EventBridge rules deleted
+- SNS topics removed
+- CloudWatch log groups deleted
