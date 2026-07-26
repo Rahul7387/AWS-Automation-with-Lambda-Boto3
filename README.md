@@ -47,6 +47,10 @@ A collection of AWS Lambda functions (Python/Boto3) that automate common cloud o
 
 **Objective:** Automate deletion of stale objects in an S3 bucket — delete files older than 30 days.
 
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 1](screenshots/assignment-1/00-architecture-diagram.png)
+
 ### Phase 1: Create the S3 Bucket and Upload Test Files
 
 **Step 1.1 — Open S3**
@@ -174,6 +178,10 @@ Change `AGE_THRESHOLD_DAYS` back to `30`:
 
 **Objective:** Automate EBS volume backups and delete snapshots older than a retention period.
 
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 2](screenshots/assignment-2/00-architecture-diagram.png)
+
 ### Phase 1: Create an EBS Volume
 
 **Step 1.1 — Open EC2**
@@ -289,6 +297,10 @@ Configure the rule:
 
 **Objective:** Automatically tag newly launched EC2 instances for resource tracking, ownership, and cost allocation.
 
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 3](screenshots/assignment-3/00-architecture-diagram.png)
+
 ### Phase 1: Create the IAM Role
 
 **Step 1.1 — Create the role**
@@ -403,6 +415,10 @@ EC2 → Instances → Select `autotag-test` → Instance state → **Terminate i
 ## Assignment 4: Daily AWS Cost Alert Using Cost Explorer API and SNS
 
 **Objective:** Build an automated alert when AWS spend exceeds a threshold using the Cost Explorer API (the modern, interview-relevant approach — not the legacy CloudWatch Billing metric).
+
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 4](screenshots/assignment-4/00-architecture-diagram.png)
 
 ### Phase 1: Create the SNS Topic and Email Subscription
 
@@ -564,6 +580,10 @@ Amazon EventBridge → Schedules → Create schedule
 
 **Prerequisite:** At least one snapshot of the source instance's root volume exists (Assignment 2 pairs well here).
 
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 5](screenshots/assignment-5/00-architecture-diagram.png)
+
 ### Phase 1: Create the IAM Role
 
 **Step 1.1 — Create the role**
@@ -697,6 +717,10 @@ Go to CloudWatch → Log groups → `/aws/lambda/ec2-snapshot-restore` → Click
 **Objective:** Detect any bucket that is publicly accessible and alert via SNS.
 
 **Note:** Since April 2023, new buckets have Block Public Access enabled and ACLs disabled by default — so the audit must check both the Block Public Access configuration and bucket policy status, not just ACLs.
+
+### Architecture Diagram
+
+![Architecture Diagram - Assignment 6](screenshots/assignment-6/00-architecture-diagram.png)
 
 ### Phase 1: Create the SNS Topic
 
