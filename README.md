@@ -558,50 +558,270 @@ Amazon EventBridge → Schedules → Create schedule
 
 ---
 
-## Assignment 5: Snapshot Restore & Instance Launch
+## Assignment 5: Restore an EC2 Instance from the Latest Snapshot
 
-**Objective:** Find the latest EBS snapshot for a volume, register an AMI from it, and launch a new EC2 instance.
+**Objective:** Automate disaster-recovery — rebuild an instance from its most recent EBS snapshot.
 
-**Lambda Function:** [`assignment-5/lambda_function.py`](assignment-5/lambda_function.py)
+**Prerequisite:** At least one snapshot of the source instance's root volume exists (Assignment 2 pairs well here).
 
-**What it does:**
-1. Finds the most recent completed snapshot for the configured volume
-2. Registers an AMI from that snapshot
-3. Waits for the AMI to become available
-4. Launches a new EC2 instance from the AMI with appropriate tags
+### Phase 1: Create the IAM Role
 
-**IAM Policy:** [`assignment-5/iam_policy.json`](assignment-5/iam_policy.json) — requires `ec2:DescribeSnapshots`, `ec2:RegisterImage`, `ec2:DescribeImages`, `ec2:RunInstances`, `ec2:CreateTags`
+**Step 1.1 — Create the role**
 
-**Environment Variables:**
-| Key | Default | Description |
-|-----|---------|-------------|
+- Go to IAM → Roles → Create role
+- Trusted entity: AWS service → Lambda
+- Click Next → skip managed policies → Next
+- Role name: `lambda-ec2-restore-role`
+
+**Step 1.2 — Add inline policy**
+
+Click into `lambda-ec2-restore-role` → Permissions tab → Add permissions → Create inline policy → JSON tab:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SnapshotAndAMIAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeSnapshots",
+        "ec2:RegisterImage",
+        "ec2:DescribeImages",
+        "ec2:RunInstances",
+        "ec2:CreateTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}
+```
+
+### Phase 2: Create the Lambda Function
+
+- Go to Lambda → Create function
+- Author from scratch
+- Function name: `ec2-snapshot-restore`
+- Runtime: Python 3.14
+- Execution role: Use an existing role → select `lambda-ec2-restore-role`
+
+**Step 2.2 — Paste the code**
+
+Paste the code from [`assignment-5/lambda_function.py`](assignment-5/lambda_function.py).
+
+The function performs 4 steps:
+1. **Find the most recent snapshot** for the given volume (sort `describe_snapshots` by `StartTime`)
+2. **Register an AMI** from the snapshot with `register_image` (specify root device mapping)
+3. **Wait for AMI** to become available using a waiter
+4. **Launch a new t3.micro instance** from that AMI and tag it (`RestoredFrom=<snapshot-id>`)
+
+**Step 2.3 — Add environment variables**
+
+Configuration → Environment variables → Edit:
+
+| Key | Value | Description |
+|-----|-------|-------------|
 | `VOLUME_ID` | `vol-0b28c036a11912ffc` | Source EBS volume |
 | `INSTANCE_TYPE` | `t3.micro` | Instance type to launch |
-| `SUBNET_ID` | *(empty)* | Optional subnet for the instance |
+| `SUBNET_ID` | *(leave empty)* | Optional subnet for the instance |
 | `ARCHITECTURE` | `x86_64` | AMI architecture |
+
+**Step 2.4 — Increase timeout**
+
+Configuration → General configuration → Edit → Timeout: **10 min 0 sec** (AMI registration + waiter needs time)
+
+### Phase 3: Test the Function
+
+**Step 3.1 — Create test event and run**
+
+Go to Test tab → Event name: `TestRestore` → Event JSON: `{}` → Click **Test**
+
+#### Debugging: No Snapshots Found
+
+The function ran correctly but returned an error — no completed snapshots found for the volume. This means the snapshot from Assignment 2 was deleted during cleanup.
+
+**Fix:** Create a new snapshot first:
+- Go to EC2 → Elastic Block Store → Snapshots → **Create snapshot**
+- Volume ID: `vol-0b28c036a11912ffc`
+- Wait for the snapshot status to change to **completed**
+
+**Retest** — Run the test again. The function should now:
+1. Find the snapshot
+2. Register an AMI
+3. Launch a new instance
+4. Return a summary with the new instance ID
+
+**Step 3.4 — Check CloudWatch Logs**
+
+Go to CloudWatch → Log groups → `/aws/lambda/ec2-snapshot-restore` → Click the latest log stream
+
+You should see the full flow: snapshot discovery → AMI registration → AMI available → instance launched.
+
+> **Important:** Remember to **TERMINATE** the restored instance after testing to avoid charges! Go to EC2 → Instances → select the restored instance → Instance state → Terminate instance.
 
 ---
 
-## Assignment 6: S3 Public Access Auditor
+## Assignment 6: Audit S3 Buckets for Public Access and Notify
 
-**Objective:** Audit all S3 buckets for public access misconfigurations and alert via SNS.
+**Objective:** Detect any bucket that is publicly accessible and alert via SNS.
 
-**Lambda Function:** [`assignment-6/lambda_function.py`](assignment-6/lambda_function.py)
+**Note:** Since April 2023, new buckets have Block Public Access enabled and ACLs disabled by default — so the audit must check both the Block Public Access configuration and bucket policy status, not just ACLs.
 
-**What it does:**
-1. Lists all S3 buckets in the account
-2. For each bucket, checks:
-   - **Block Public Access** configuration (all 4 settings)
-   - **Bucket Policy Status** (is the policy public?)
-   - **ACL Grants** (AllUsers or AuthenticatedUsers access)
-3. If any public buckets are found, sends a detailed SNS alert
+### Phase 1: Create the SNS Topic
 
-**IAM Policy:** [`assignment-6/iam_policy.json`](assignment-6/iam_policy.json) — requires `s3:ListAllMyBuckets`, `s3:GetBucketPublicAccessBlock`, `s3:GetBucketPolicyStatus`, `s3:GetBucketAcl`, `sns:Publish`
+**Step 1.1 — Create topic**
 
-**Environment Variables:**
-| Key | Default | Description |
-|-----|---------|-------------|
-| `SNS_TOPIC_ARN` | `arn:aws:sns:us-east-1:368763426154:S3PublicAlerts` | SNS topic for alerts |
+- Go to SNS → Topics → Create topic
+- Type: Standard
+- Name: `S3PublicAlerts`
+- Click Create topic
+- Copy the Topic ARN: `arn:aws:sns:us-east-1:368763426154:S3PublicAlerts`
+
+**Step 1.2 — Subscribe your email**
+
+- On the topic page → Create subscription
+- Protocol: Email
+- Endpoint: your email address
+- Click Create subscription
+- Confirm the subscription from your email inbox
+
+### Phase 2: Create the IAM Role
+
+**Step 2.1 — Create the role**
+
+- Go to IAM → Roles → Create role
+- Trusted entity: AWS service → Lambda
+- Click Next → skip managed policies → Next
+- Role name: `lambda-s3-audit-role`
+
+**Step 2.2 — Add inline policy**
+
+Permissions tab → Add permissions → Create inline policy → JSON tab:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3AuditRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketPolicyStatus",
+        "s3:GetBucketAcl"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SNSPublish",
+      "Effect": "Allow",
+      "Action": [
+        "sns:Publish"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:368763426154:S3PublicAlerts"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}
+```
+
+### Phase 3: Create the Lambda Function
+
+**Step 3.1 — Create function**
+
+- Go to Lambda → Create function
+- Author from scratch
+- Function name: `s3-public-access-audit`
+- Runtime: Python 3.12
+- Execution role: Use an existing role → select `lambda-s3-audit-role`
+
+**Step 3.2 — Paste the code**
+
+Paste the code from [`assignment-6/lambda_function.py`](assignment-6/lambda_function.py).
+
+The function performs 3 checks on every bucket:
+1. **Block Public Access** configuration — are all 4 settings enabled?
+2. **Bucket Policy Status** — does the policy allow public access?
+3. **ACL Grants** — are there AllUsers or AuthenticatedUsers grants?
+
+**Step 3.3 — Add environment variable**
+
+Configuration → Environment variables → Edit:
+
+| Key | Value |
+|-----|-------|
+| `SNS_TOPIC_ARN` | `arn:aws:sns:us-east-1:368763426154:S3PublicAlerts` |
+
+**Step 3.4 — Set timeout**
+
+Configuration → General configuration → Edit → Timeout: **1 min 0 sec**
+
+### Phase 4: Create a Deliberately Public Test Bucket
+
+**Step 4.1 — Create the test bucket**
+
+- Go to S3 → Create bucket
+- Name: `test-public-audit-rahul`
+- Region: us-east-1
+- **Uncheck** "Block all public access" checkbox
+- **Check** the acknowledgement box that appears
+- Click Create bucket
+
+**Step 4.2 — Add a public bucket policy**
+
+Go to the bucket → Permissions tab → Bucket policy → Edit → paste a public-read policy to make the bucket detectable by the audit.
+
+### Phase 5: Test the Function
+
+**Step 5.1 — Run the test**
+
+Go to Lambda → `s3-public-access-audit` → Test tab → Event JSON: `{}` → Click **Test**
+
+The function should:
+- List all buckets in the account
+- Flag `test-public-audit-rahul` as public (Block Public Access disabled + public policy)
+- Send an SNS alert email with the findings
+- Return a summary showing 1 public bucket found
+
+### Phase 6: RE-SECURE the Test Bucket
+
+**This step is critical — do not leave a public bucket in your account!**
+
+- Go to S3 → `test-public-audit-rahul` → Permissions → Bucket policy → **Delete**
+- Enable Block Public Access: Permissions → Block public access → **Edit** → check all boxes → Save
+- Alternatively, just delete the test bucket entirely: empty it first, then delete
+
+### Phase 7: Create the EventBridge Daily Schedule
+
+**Step 7.1 — Create schedule**
+
+- Go to Amazon EventBridge → Schedules → Create schedule
+- Name: `daily-s3-audit`
+- Description: Daily S3 public access audit
+- Schedule pattern: Recurring schedule
+- Schedule type: Rate-based schedule
+- Rate expression: `1 day`
+- Target: AWS Lambda → `s3-public-access-audit`
 
 ---
 
